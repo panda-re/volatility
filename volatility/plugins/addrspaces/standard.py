@@ -30,6 +30,10 @@ import volatility.debug as debug  # pylint: disable-msg=W0611
 import urllib.request, urllib.parse, urllib.error
 import os
 
+# Ryan socket hacks
+import socket
+from struct import *
+
 # pylint: disable-msg=C0111
 
 
@@ -88,11 +92,20 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
         self.name = os.path.abspath(path)
         self.fname = self.name
         self.mode = 'rb'
+        self.socket = False
+        self.last_addr = 0
         if config.WRITE:
             self.mode += '+'
-        self.fhandle = open(self.fname, self.mode)
-        self.fhandle.seek(0, 2)
-        self.fsize = self.fhandle.tell()
+        if "pmem_sock" not in self.fname:
+            self.fhandle = open(self.fname, self.mode)
+            self.fhandle.seek(0, 2)
+            self.fsize = self.fhandle.tell()
+        else:
+            self.fhandle =  socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.fhandle.connect(self.fname)
+            self.socket = True
+            sz_bytes = int.from_bytes(self.request_generator(3, 0, 8), "little")
+            self.fsize = sz_bytes
         self._long_struct = struct.Struct("=I")
 
     # Abstract Classes cannot register options, and since this checks config.WRITE in __init__, we define the option here
@@ -107,12 +120,32 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
             callback=write_callback,
         )
 
+    def request_generator(self, type, addr, length):
+        req = pack("<QQQ", type, addr, length)
+        #print(f"Sending req {req}")
+        self.fhandle.sendall(req)
+        data = self.fhandle.recv(length)
+        #print(f"\t And read data: {data}")
+        return data
+
     def fread(self, length: int) -> bytes:
+        if self.socket:
+            self.last_addr +=  length
+            return self.request_generator(1, self.last_addr - length, int(length))
         length = int(length)
         return self.fhandle.read(length)
 
     def read(self, addr: int, length: int) -> bytes:
         addr, length = int(addr), int(length)
+        if self.socket:
+            #print(f"[STANDARD] Addr: {addr:x} | length: {length}")
+            self.last_addr = addr + length
+            data = self.request_generator(1, int(addr), int(length))
+            if len(data) == 0:
+                #print(f"[STANDARD] Returning None")
+                return None
+            #print(f"[STANDARD] Returning {data}")
+            return data
         try:
             self.fhandle.seek(addr)
         except (IOError, OverflowError):
@@ -146,11 +179,19 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
         return 0 <= addr < self.fsize
 
     def close(self):
+        print("[standard] Closing time")
         self.fhandle.close()
 
     def write(self, addr: int, data: bytes):
         if not self._config.WRITE:
             return False
+        if self.socket:
+            try:
+                self.request_generator(2, addr, len(data))
+                self.fhandle.sendall(data)
+                return True
+            except:
+                return False
         try:
             self.fhandle.seek(addr)
             self.fhandle.write(data)
