@@ -11,12 +11,14 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
     REQ_OUIT = 0
     REQ_READ = 1
     REQ_WRITE = 2
+    REQ_RAM_SIZE = 3
 
     def __init__(self, base, config, **kwargs):
         '''
         Initializes the address space with volatility and connects to the PMemAcess socket
         '''
         # Address space setup
+        print(f"Base: {base}")
         self.as_assert(base == None, "Must be first Address Space")
         addrspace.BaseAddressSpace.__init__(self, None, config, **kwargs)
         self.as_assert(config.LOCATION.startswith("file://"), 'Location is not of file scheme')
@@ -34,6 +36,11 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
             sys.stderr.flush()
             #sys.exit(1)
         self.as_assert(self.connected, "Could not connect to socket")
+        self.send_request(self.REQ_RAM_SIZE, 0, 0)
+        x = self.sock_fd.recv(self.profile.get_obj_size("address"))
+        print(x)
+        self.max_addr = int.from_bytes(x, "big")
+        print(f"{self.max_addr:x}")
         #print("SUCCESS: Connected to: " + self.sock_path)
 
     def close(self):
@@ -96,10 +103,13 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
         return self.__read_bytes(addr, length, pad=True)
 
     def is_valid_address(self, addr):
-        if addr == None:
+        if 0 > addr or addr > self.max_addr:
             return False
         return True
 
+    def get_available_addresses(self):
+        yield (0, self.max_addr)
+    
     def write(self, addr, data):
         '''
         Writes data using PMemAccess
