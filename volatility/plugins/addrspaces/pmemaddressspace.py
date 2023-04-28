@@ -110,7 +110,6 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
                   raise(AssertionError("PMemAddressSpace: TIMEOUT @ " + hex(addr)))
               read_length += read_len
         except AssertionError as e:
-            print(e)
             memory = b''
         if pad:
             if memory is None:
