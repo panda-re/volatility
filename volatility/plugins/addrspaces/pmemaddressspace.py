@@ -18,7 +18,7 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
         Initializes the address space with volatility and connects to the PMemAcess socket
         '''
         # Address space setup
-        print(f"Base: {base}")
+        #print(f"Base: {base}")
         self.as_assert(base == None, "Must be first Address Space")
         addrspace.BaseAddressSpace.__init__(self, None, config, **kwargs)
         self.as_assert(config.LOCATION.startswith("file://"), 'Location is not of file scheme')
@@ -36,11 +36,16 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
             sys.stderr.flush()
             #sys.exit(1)
         self.as_assert(self.connected, "Could not connect to socket")
-        self.send_request(self.REQ_RAM_SIZE, 0, 0)
-        x = self.sock_fd.recv(self.profile.get_obj_size("address"))
-        print(x)
-        self.max_addr = int.from_bytes(x, "big")
-        print(f"{self.max_addr:x}")
+        #self.send_request(self.REQ_RAM_SIZE, 0, 0)
+        #x = self.sock_fd.recv(self.profile.get_obj_size("address") * 2)
+        #print(f"{x}")  
+        #self.max_addr = int.from_bytes(x, "big")
+        #print(f"{self.max_addr:x}")
+        #if self.profile.get_obj_size("address") == 4:
+        #    self.max_addr = 0xffffffff
+        #else:
+        #    self.max_addr = 0xffffffffffffffff
+        self.max_addr = 0xffffffffffffffff
         #print("SUCCESS: Connected to: " + self.sock_path)
 
     def close(self):
@@ -83,17 +88,35 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
                   read_len = length-read_length
               self.send_request(self.REQ_READ, addr+read_length, read_len)
               # Read the memory
+              '''
+              try:
+                self.sock_fd.settimeout(5.0)
+                memory += self.sock_fd.recv(read_len)
+              
+                self.sock_fd.settimeout(5.0)
+                status = struct.unpack("<B", self.sock_fd.recv(1))[0]
+              except:
+                  memory = b''
+                  status = 2
+                  '''
+            
               memory += self.sock_fd.recv(read_len)
-              # Read and confirm result
               status = struct.unpack("<B", self.sock_fd.recv(1))[0]
               if status == 0:
                   raise AssertionError("PMemAddressSpace: READ of length " + 
                                        str(read_length) + '/' + str(length) +
                                        " @ " + hex(addr) + " failed.")
+              if status == 2:
+                  raise(AssertionError("PMemAddressSpace: TIMEOUT @ " + hex(addr)))
               read_length += read_len
         except AssertionError as e:
             print(e)
-            memory = ''
+            memory = b''
+        if pad:
+            if memory is None:
+                memory = b'\x00' * length
+            elif len(memory) != length:
+                memory += b'\x00' * (length - len(memory))
         return memory
 
     def read(self, addr, length):
@@ -105,6 +128,8 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
     def is_valid_address(self, addr):
         if 0 > addr or addr > self.max_addr:
             return False
+        #if addr == None:
+        #    return False
         return True
 
     def get_available_addresses(self):
