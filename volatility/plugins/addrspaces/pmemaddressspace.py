@@ -5,6 +5,7 @@ import urllib
 import socket
 import struct
 import sys
+from threading import Thread, Lock
 
 class PMemAddressSpace(addrspace.BaseAddressSpace):
     # PMemAccess request types
@@ -12,6 +13,8 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
     REQ_READ = 1
     REQ_WRITE = 2
     REQ_RAM_SIZE = 3
+
+    mutex = Lock()
 
     def __init__(self, base, config, **kwargs):
         '''
@@ -28,13 +31,19 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
         #print("Connecting to: " + self.sock_path)
         self.sock_fd = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.connected = False
-        try:
-            self.sock_fd.connect(self.sock_path)
-            self.connected = True
-        except socket.error as msg:
-            sys.stderr.write("PMemAddressSpace:{0}".format(str(msg)))
-            sys.stderr.flush()
-            #sys.exit(1)
+        tries = 0
+        while tries < 10:
+            try:
+                self.sock_fd.connect(self.sock_path)
+                self.connected = True
+                break
+            except socket.error as msg:
+                #sys.stderr.write("PMemAddressSpace:{0}".format(str(msg)))
+                #sys.stderr.flush()
+                tries += 1
+                sys.stderr.write("Failed, trying {0}th time\n".format(tries))
+                sys.stderr.flush()
+                #sys.exit(1)
         self.as_assert(self.connected, "Could not connect to socket")
         #self.send_request(self.REQ_RAM_SIZE, 0, 0)
         #x = self.sock_fd.recv(self.profile.get_obj_size("address") * 2)
@@ -116,6 +125,7 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
                 memory = b'\x00' * length
             elif len(memory) != length:
                 memory += b'\x00' * (length - len(memory))
+        
         return memory
 
     def read(self, addr, length):
@@ -139,6 +149,8 @@ class PMemAddressSpace(addrspace.BaseAddressSpace):
         Writes data using PMemAccess
         '''
         try:
+            sys.stderr.write("Writing data?\n")
+            sys.stderr.flush()
             length = len(data)
             # Send write request
             self.send_request(self.REQ_WRITE, addr, length)

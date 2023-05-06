@@ -36,6 +36,8 @@ from struct import *
 
 # pylint: disable-msg=C0111
 
+import sys
+
 
 def write_callback(option, _opt_str, _value, parser, *_args, **_kwargs):
     """Callback function to ensure that write support is only enabled if user repeats a long string
@@ -96,6 +98,7 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
         self.last_addr = 0
         if config.WRITE:
             self.mode += '+'
+        self.as_assert("pmem_sock" not in self.fname, "Not doing socket stuff")
         if "pmem_sock" not in self.fname:
             self.fhandle = open(self.fname, self.mode)
             self.fhandle.seek(0, 2)
@@ -104,8 +107,9 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
             self.fhandle =  socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.fhandle.connect(self.fname)
             self.socket = True
-            sz_bytes = int.from_bytes(self.request_generator(3, 0, 8), "little")
-            self.fsize = sz_bytes
+            #sz_bytes = int.from_bytes(self.request_generator(3, 0, 8), "little")
+            #self.fsize = sz_bytes
+            self.fsize = 0xffffffff
         self._long_struct = struct.Struct("=I")
 
     # Abstract Classes cannot register options, and since this checks config.WRITE in __init__, we define the option here
@@ -121,6 +125,8 @@ class FileAddressSpace(addrspace.BaseAddressSpace):
         )
 
     def request_generator(self, type, addr, length):
+        sys.stderr.write("Using the req generator for some stupid reason\n")
+        sys.stderr.flush()
         req = pack("<QQQ", type, addr, length)
         #print(f"Sending req {req}")
         self.fhandle.sendall(req)
