@@ -96,7 +96,7 @@ class Screenshot(windowstations.WndScan):
 
                 # Traverse windows, visible only
                 for win, _level in desktop.windows(
-                    win=win, filter=lambda x: 'WS_VISIBLE' in str(x.style)
+                    win=win, fltr=lambda x: 'WS_VISIBLE' in str(x.style)
                 ):
                     draw.rectangle(
                         win.rcWindow.get_tup(), outline="Black", fill="White"
